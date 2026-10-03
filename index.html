@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Interferómetro de Michelson 3D - Laboratorio Virtual</title>
+  <!-- Three.js y OrbitControls desde CDN confiable -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+    body {
+      background-color: #0b0f19;
+      color: #e2e8f0;
+      overflow: hidden;
+      display: flex;
+      height: 100vh;
+      width: 100vw;
+    }
+    #canvas-container {
+      flex: 1;
+      height: 100%;
+      position: relative;
+    }
+    #webgl-canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+    /* Panel lateral de controles */
+    #sidebar {
+      width: 380px;
+      height: 100%;
+      background: rgba(15, 23, 42, 0.95);
+      border-left: 1px solid #334155;
+      padding: 20px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      box-shadow: -5px 0 25px rgba(0,0,0,0.5);
+      z-index: 10;
+    }
+    h1 {
+      font-size: 1.25rem;
+      color: #38bdf8;
+      border-bottom: 2px solid #0284c7;
+      padding-bottom: 8px;
+    }
+    .panel-card {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 14px;
+    }
+    .card-title {
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: #94a3b8;
+      margin-bottom: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .control-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+      font-size: 0.85rem;
+    }
+    .control-row label {
+      color: #cbd5e1;
+    }
+    .control-row span {
+      font-family: monospace;
+      color: #38bdf8;
+      font-weight: 600;
+    }
+    input[type=range] {
+      width: 100%;
+      margin: 6px 0 12px 0;
+      accent-color: #38bdf8;
+    }
+    select, button {
+      width: 100%;
+      padding: 8px 12px;
+      border-radius: 6px;
+      border: 1px solid #475569;
+      background: #0f172a;
+      color: #f8fafc;
+      font-size: 0.85rem;
+      cursor: pointer;
+      outline: none;
+      transition: all 0.2s;
+    }
+    select:hover, button:hover {
+      border-color: #38bdf8;
+      background: #1e293b;
+    }
+    .btn-group {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 6px;
+    }
+    /* Visor 2D flotante del patrón */
+    #screen-preview {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      background: #020617;
+      border-radius: 8px;
+      border: 1px solid #334155;
+      padding: 10px;
+    }
+    #fringe-canvas {
+      width: 180px;
+      height: 180px;
+      border-radius: 50%;
+      background: #000;
+      box-shadow: 0 0 15px rgba(0,0,0,0.8), inset 0 0 10px #000;
+      border: 2px solid #475569;
+    }
+    .overlay-info {
+      position: absolute;
+      top: 15px;
+      left: 15px;
+      background: rgba(15, 23, 42, 0.85);
+      border: 1px solid #334155;
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 0.8rem;
+      pointer-events: none;
+      line-height: 1.5;
+    }
+    .formula {
+      font-family: 'Times New Roman', Times, serif;
+      font-style: italic;
+      color: #fbbf24;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Escenario 3D -->
+  <div id="canvas-container">
+    <canvas id="webgl-canvas"></canvas>
+    <div class="overlay-info">
+      <div>🖱️ <b>Arrastrar con clic izquierdo:</b> Rotar mesa óptica</div>
+      <div>🖱️ <b>Rueda del ratón:</b> Acercar / Alejar (Zoom)</div>
+      <div>🖱️ <b>Clic derecho:</b> Desplazar vista</div>
+    </div>
+  </div>
+
+  <!-- Panel de control interactivo -->
+  <div id="sidebar">
+    <h1>Interferómetro 3D</h1>
+
+    <!-- Visor del patrón de franjas -->
+    <div class="panel-card" style="text-align: center;">
+      <div class="card-title">Patrón en Pantalla</div>
+      <div id="screen-preview">
+        <canvas id="fringe-canvas" width="250" height="250"></canvas>
+      </div>
+      <div style="font-size: 0.75rem; color: #94a3b8; margin-top: 8px;">
+        Condición: <span class="formula">2d cos(θ) = mλ</span>
+      </div>
+    </div>
+
+    <!-- Fuente de Luz -->
+    <div class="panel-card">
+      <div class="card-title">Láser Monocromático</div>
+      <div class="control-row">
+        <label>Fuente:</label>
+        <select id="laser-select">
+          <option value="632.8">He-Ne (Rojo - 632.8 nm)</option>
+          <option value="532.0">Nd:YAG (Verde - 532.0 nm)</option>
+          <option value="445.0">Diodo (Azul - 445.0 nm)</option>
+          <option value="589.0">Sodio (Amarillo - 589.0 nm)</option>
+        </select>
+      </div>
+      <div class="control-row" style="margin-top: 8px;">
+        <label>Longitud de onda (λ):</label>
+        <span id="lambda-val">632.8 nm</span>
+      </div>
+    </div>
+
+    <!-- Desplazamiento Micrométrico Espejo M2 -->
+    <div class="panel-card">
+      <div class="card-title">Espejo Móvil (M₂)</div>
+      <div class="control-row">
+        <label>Desplazamiento (d):</label>
+        <span id="pos-val">10.000 μm</span>
+      </div>
+      <input type="range" id="m2-slider" min="0" max="30" step="0.05" value="10">
+
+      <div class="btn-group">
+        <button id="step-minus">- 0.5 μm</button>
+        <button id="step-plus">+ 0.5 μm</button>
+      </div>
+    </div>
+
+    <!-- Inclinación para franjas de cuña -->
+    <div class="panel-card">
+      <div class="card-title">Alineación Espejo M₂</div>
+      <div class="control-row">
+        <label>Inclinación (Cuña de aire):</label>
+        <span id="tilt-val">0.00 mrad</span>
+      </div>
+      <input type="range" id="tilt-slider" min="0" max="0.8" step="0.01" value="0">
+      <div style="font-size: 0.75rem; color: #64748b;">
+        * Una inclinación mayor a 0 genera franjas rectilíneas (Fizeau).
+      </div>
+    </div>
+
+    <!-- Restablecer Vista -->
+    <button id="reset-cam" style="margin-top: auto;">Restablecer Vista de Cámara</button>
+  </div>
+
+  <script>
+    // --- PARÁMETROS FÍSICOS Y ESTADO ---
+    let wavelength = 632.8; // nm
+    let dMicrons = 10.0;     // μm
+    let tiltMrad = 0.0;      // mrad
+    let laserColorHex = 0xff2222;
+
+    const lambdaVal = document.getElementById('lambda-val');
+    const posVal = document.getElementById('pos-val');
+    const tiltVal = document.getElementById('tilt-val');
+    const laserSelect = document.getElementById('laser-select');
+    const m2Slider = document.getElementById('m2-slider');
+    const tiltSlider = document.getElementById('tilt-slider');
+    const fringeCanvas = document.getElementById('fringe-canvas');
+    const fringeCtx = fringeCanvas.getContext('2d');
+
+    // --- CONFIGURACIÓN THREE.JS (ESCENARIO 3D) ---
+    const container = document.getElementById('canvas-container');
+    const canvas3D = document.getElementById('webgl-canvas');
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x080c14);
+
+    const camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 100);
+    camera.position.set(12, 14, 18);
+
+    const renderer = new THREE.WebGLRenderer({ canvas: canvas3D, antialias: true });
+    renderer.setSize(container.clientWidth, container.clientHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+
+    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.maxPolarAngle = Math.PI / 2.05; // No pasar por debajo de la mesa
+    controls.target.set(0, 1.5, 0);
+
+    // --- ILUMINACIÓN ---
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.55);
+    scene.add(ambientLight);
+
+    const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    dirLight.position.set(10, 20, 15);
+    dirLight.castShadow = true;
+    scene.add(dirLight);
+
+    // --- MESA ÓPTICA (BREADBOARD) ---
+    const tableGeo = new THREE.BoxGeometry(22, 0.8, 22);
+    const tableMat = new THREE.MeshStandardMaterial({
+      color: 0x1e293b,
+      roughness: 0.4,
+      metalness: 0.7
+    });
+    const table = new THREE.Mesh(tableGeo, tableMat);
+    table.position.y = -0.4;
+    scene.add(table);
+
+    // Rejilla de orificios roscados estándar (métrica)
+    const grid = new THREE.GridHelper(20, 20, 0x475569, 0x334155);
+    grid.position.y = 0.01;
+    scene.add(grid);
+
+    // Función auxiliar para crear postes y monturas cinemáticas
+    function createPost(x, z, height = 2.0) {
+      const group = new THREE.Group();
+      const baseGeo = new THREE.CylinderGeometry(0.7, 0.8, 0.2, 24);
+      const baseMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.8 });
+      const base = new THREE.Mesh(baseGeo, baseMat);
+      base.position.y = 0.1;
+      group.add(base);
+
+      const postGeo = new THREE.CylinderGeometry(0.25, 0.25, height, 16);
+      const postMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.9, roughness: 0.2 });
+      const post = new THREE.Mesh(postGeo, postMat);
+      post.position.y = height / 2;
+      group.add(post);
+
+      group.position.set(x, 0, z);
+      return group;
+    }
+
+    // 1. LÁSER DE LABORATORIO
+    const laserGroup = new THREE.Group();
+    laserGroup.add(createPost(-7, 0, 1.8));
+    const laserBodyGeo = new THREE.CylinderGeometry(0.45, 0.45, 3.2, 24);
+    const laserBodyMat = new THREE.MeshStandardMaterial({ color: 0x0284c7, metalness: 0.5, roughness: 0.3 });
+    const laserHead = new THREE.Mesh(laserBodyGeo, laserBodyMat);
+    laserHead.rotation.z = Math.PI / 2;
+    laserHead.position.set(-6.5, 2.0, 0);
+    laserGroup.add(laserHead);
+    scene.add(laserGroup);
+
+    // 2. DIVISOR DE HAZ (Beam Splitter a 45°)
+    const bsGroup = new THREE.Group();
+    bsGroup.add(createPost(0, 0, 1.6));
+    const bsCubeGeo = new THREE.BoxGeometry(1.6, 1.6, 0.15);
+    const bsMat = new THREE.MeshPhysicalMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0.65,
+      roughness: 0.1,
+      transmission: 0.7,
+      ior: 1.5
+    });
+    const bsPlate = new THREE.Mesh(bsCubeGeo, bsMat);
+    bsPlate.position.set(0, 2.0, 0);
+    bsPlate.rotation.y = Math.PI / 4;
+    bsGroup.add(bsPlate);
+    scene.add(bsGroup);
+
+    // 3. ESPEJO FIJO M1 (En Z positivo)
+    const m1Group = new THREE.Group();
+    m1Group.add(createPost(0, 5.5, 1.6));
+    const m1MirrorGeo = new THREE.CylinderGeometry(0.9, 0.9, 0.18, 32);
+    const mirrorMat = new THREE.MeshStandardMaterial({
+      color: 0xe2e8f0,
+      metalness: 0.98,
+      roughness: 0.05
+    });
+    const m1Mirror = new THREE.Mesh(m1MirrorGeo, mirrorMat);
+    m1Mirror.rotation.x = Math.PI / 2;
+    m1Mirror.position.set(0, 2.0, 5.5);
+    m1Group.add(m1Mirror);
+    scene.add(m1Group);
+
+    // 4. ESPEJO MÓVIL M2 CON CARRO MICROMÉTRICO (En X positivo)
+    const m2Stage = new THREE.Group();
+    const carriageGeo = new THREE.BoxGeometry(2.0, 0.4, 2.0);
+    const carriageMat = new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.6 });
+    const carriage = new THREE.Mesh(carriageGeo, carriageMat);
+    carriage.position.set(5.5, 0.2, 0);
+    m2Stage.add(carriage);
+
+    // Micrómetro cilíndrico
+    const micrometerGeo = new THREE.CylinderGeometry(0.3, 0.3, 1.5, 16);
+    const micrometerMat = new THREE.MeshStandardMaterial({ color: 0x64748b, metalness: 0.9 });
+    const micrometer = new THREE.Mesh(micrometerGeo, micrometerMat);
+    micrometer.rotation.z = Math.PI / 2;
+    micrometer.position.set(6.7, 0.2, 0);
+    m2Stage.add(micrometer);
+
+    const m2Mirror = new THREE.Mesh(m1MirrorGeo, mirrorMat);
+    m2Mirror.rotation.z = Math.PI / 2;
+    m2Mirror.position.set(5.5, 2.0, 0);
+    m2Stage.add(m2Mirror);
+    scene.add(m2Stage);
+
+    // 5. PANTALLA DETECTORA (En Z negativo)
+    const screenGroup = new THREE.Group();
+    screenGroup.add(createPost(0, -5.5, 1.2));
+    const screenGeo = new THREE.BoxGeometry(3.2, 3.2, 0.1);
+    
+    // Textura dinámica Three.js desde el Canvas 2D
+    const screenTexture = new THREE.CanvasTexture(fringeCanvas);
+    const screenMat = new THREE.MeshBasicMaterial({ map: screenTexture });
+    const screenMesh = new THREE.Mesh(screenGeo, screenMat);
+    screenMesh.position.set(0, 2.0, -5.5);
+    screenGroup.add(screenMesh);
+    scene.add(screenGroup);
+
+    // --- HACES DE LUZ LÁSER 3D ---
+    function createLaserSegment() {
+      const geo = new THREE.CylinderGeometry(0.04, 0.04, 1, 12);
+      const mat = new THREE.MeshBasicMaterial({ color: laserColorHex, transparent: true, opacity: 0.85 });
+      return new THREE.Mesh(geo, mat);
+    }
+
+    // Segmento A: Láser -> Divisor
+    const beamSource = createLaserSegment();
+    beamSource.rotation.z = Math.PI / 2;
+    beamSource.position.set(-2.5, 2.0, 0);
+    beamSource.scale.y = 5.0;
+    scene.add(beamSource);
+
+    // Segmento B: Divisor -> Espejo M2
+    const beamArmM2 = createLaserSegment();
+    beamArmM2.rotation.z = Math.PI / 2;
+    beamArmM2.position.set(2.75, 2.0, 0);
+    beamArmM2.scale.y = 5.5;
+    scene.add(beamArmM2);
+
+    // Segmento C: Divisor -> Espejo M1
+    const beamArmM1 = createLaserSegment();
+    beamArmM1.position.set(0, 2.0, 2.75);
+    beamArmM1.scale.y = 5.5;
+    scene.add(beamArmM1);
+
+    // Segmento D: Divisor -> Pantalla
+    const beamArmScreen = createLaserSegment();
+    beamArmScreen.position.set(0, 2.0, -2.75);
+    beamArmScreen.scale.y = 5.5;
+    scene.add(beamArmScreen);
+
+    const laserBeams = [beamSource, beamArmM2, beamArmM1, beamArmScreen];
+
+    function updateLaserColors(hex) {
+      laserColorHex = hex;
+      laserBeams.forEach(b => b.material.color.setHex(hex));
+    }
+
+    // --- RENDERIZADO DEL PATRÓN FÍSICO DE INTERFERENCIA ---
+    function renderFringePattern() {
+      const w = fringeCanvas.width;
+      const h = fringeCanvas.height;
+      const imgData = fringeCtx.createImageData(w, h);
+      const data = imgData.data;
+
+      // Color base del láser (RGB)
+      const rVal = (laserColorHex >> 16) & 255;
+      const gVal = (laserColorHex >> 8) & 255;
+      const bVal = laserColorHex & 255;
+
+      const cx = w / 2;
+      const cy = h / 2;
+      const k = (2 * Math.PI) / (wavelength * 1e-3); // Vector de onda en 1/μm
+      const deltaD = dMicrons; // Diferencia de camino óptico
+
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          const idx = (y * w + x) * 4;
+          const dx = (x - cx) / (w * 0.45);
+          const dy = (y - cy) / (h * 0.45);
+          const rSq = dx * dx + dy * dy;
+
+          if (rSq > 1.0) {
+            data[idx + 3] = 0; // Transparente fuera del círculo
+            continue;
+          }
+
+          // Ángulo de inclinación θ para franjas circulares (Haidinger)
+          const cosTheta = 1.0 - 0.04 * rSq;
+          // Fase por cuña de aire (Fizeau)
+          const tiltPhase = tiltMrad * 45.0 * dx;
+
+          // Diferencia de fase total: Δφ = 2·k·d·cos(θ) + φ_inclinación
+          const deltaPhi = 2 * k * deltaD * cosTheta + tiltPhase;
+          const intensity = Math.pow(Math.cos(deltaPhi / 2), 2);
+
+          // Perfil gaussiano de atenuación radial
+          const gaussian = Math.exp(-rSq * 2.2);
+          const finalI = intensity * gaussian;
+
+          data[idx] = Math.min(255, rVal * finalI * 1.3);
+          data[idx + 1] = Math.min(255, gVal * finalI * 1.3);
+          data[idx + 2] = Math.min(255, bVal * finalI * 1.3);
+          data[idx + 3] = 255;
+        }
+      }
+
+      fringeCtx.putImageData(imgData, 0, 0);
+      screenTexture.needsUpdate = true;
+    }
+
+    // --- EVENTOS DE USUARIO ---
+    laserSelect.addEventListener('change', (e) => {
+      wavelength = parseFloat(e.target.value);
+      lambdaVal.innerText = wavelength.toFixed(1) + ' nm';
+
+      if (wavelength > 620) updateLaserColors(0xff2222);       // Rojo
+      else if (wavelength > 510) updateLaserColors(0x10b981);  // Verde
+      else if (wavelength > 430) updateLaserColors(0x38bdf8);  // Azul
+      else updateLaserColors(0xfacc15);                       // Amarillo
+
+      renderFringePattern();
+    });
+
+    m2Slider.addEventListener('input', (e) => {
+      dMicrons = parseFloat(e.target.value);
+      posVal.innerText = dMicrons.toFixed(3) + ' μm';
+      // Desplazamiento visual proporcional del carro M2 en 3D
+      m2Stage.position.x = (dMicrons - 10) * 0.04;
+      renderFringePattern();
+    });
+
+    tiltSlider.addEventListener('input', (e) => {
+      tiltMrad = parseFloat(e.target.value);
+      tiltVal.innerText = tiltMrad.toFixed(2) + ' mrad';
+      // Inclinación visible del espejo en 3D
+      m2Mirror.rotation.y = tiltMrad * 0.2;
+      renderFringePattern();
+    });
+
+    document.getElementById('step-plus').addEventListener('click', () => {
+      dMicrons = Math.min(30, dMicrons + 0.5);
+      m2Slider.value = dMicrons;
+      posVal.innerText = dMicrons.toFixed(3) + ' μm';
+      m2Stage.position.x = (dMicrons - 10) * 0.04;
+      renderFringePattern();
+    });
+
+    document.getElementById('step-minus').addEventListener('click', () => {
+      dMicrons = Math.max(0, dMicrons - 0.5);
+      m2Slider.value = dMicrons;
+      posVal.innerText = dMicrons.toFixed(3) + ' μm';
+      m2Stage.position.x = (dMicrons - 10) * 0.04;
+      renderFringePattern();
+    });
+
+    document.getElementById('reset-cam').addEventListener('click', () => {
+      camera.position.set(12, 14, 18);
+      controls.target.set(0, 1.5, 0);
+      controls.update();
+    });
+
+    window.addEventListener('resize', () => {
+      camera.aspect = container.clientWidth / container.clientHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(container.clientWidth, container.clientHeight);
+    });
+
+    // --- BUCLE DE ANIMACIÓN ---
+    function animate() {
+      requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+
+    // Inicializar
+    renderFringePattern();
+    animate();
+  </script>
+</body>
+</html>
